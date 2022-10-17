@@ -247,6 +247,7 @@ class Player {
 		this.toggleClimb = false;
 		this.climbing = false;
 		this.climbSpeed = 5 * scale;
+		this.selectedLadder = undefined;
 	}
 	fall() {
 		var selectedPlatform = platformList.find(platform => {
@@ -277,8 +278,8 @@ class Player {
 		}
 	}
 	climb() {
-		var selectedLadder = ladderList.find(ladder => {return checkCollision(this, ladder);});
-		if (selectedLadder == undefined && this.climbing) {
+		this.selectedLadder = ladderList.find(ladder => {return checkCollision(this, ladder);});
+		if (this.selectedLadder == undefined && this.climbing) {
 			this.onLand = false;
 			this.frameY = 1;
 			this.prevFrameY = this.frameY;
@@ -398,6 +399,10 @@ class Player {
 			this.position.x, this.position.y, 
 			this.spriteWidth, this.spriteHeight
 		);
+		if (this.selectedLadder != undefined && !this.climbing) {
+			ctx.fillStyle = "white";
+			ctx.fillText("E", this.position.x + this.width / 2, this.position.y - 10);
+		}
 	}
 }
 
