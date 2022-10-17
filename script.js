@@ -24,6 +24,9 @@ const control = {
 	right: false,
 	jump: false,
 	mine: false,
+	climb: false,
+	climbUp: false,
+	climbDown: false,
 	mouseX: undefined,
 	mouseY: undefined,
 };
@@ -172,11 +175,11 @@ var dropItemList = [];
 var emptyTileList = [];
 var textList = [];
 var platformList = [];
-var inventorySlotList = [];
+var ladderList = [];
 
 var gameFrame = 0;
 var currentMineRegenTime = 0;
-var mineRegenTime = 50;
+var mineRegenTime = 3000;
 
 var playerImage = new Image();
 playerImage.src = "source/img/miner.png";
@@ -188,6 +191,8 @@ var pickaxeImage = new Image();
 pickaxeImage.src = "source/img/pickaxe.png";
 var platformImage = new Image();
 platformImage.src = "source/img/platform.png";
+var ladderImage = new Image();
+ladderImage.src = "source/img/ladder.png";
 
 var bgm1 = new Audio();
 bgm1.src = "source/sound/bgm3.ogg";
@@ -231,20 +236,21 @@ class Player {
 		this.fallSpeed = 2 * scale;
 		this.currentJumpVelocity = this.fallSpeed;
 		this.runSpeed = 3 * scale;
-		this.runAcceleration = 0.2 * scale;
-		this.maxRunSpeed = 5 * scale;
 		this.currentRunVelocity = this.runSpeed;
 		this.pickaxe = "stone";
-		this.mineDelay = 20;
+		this.mineDelay = 200;
 		this.mineCount = this.mineDelay;
 		this.maxHP = 10;
 		this.currentHP = this.maxHP;
-		this.reachLimitX = 5 * tileSize;
-		this.reachLimitY = 3 * tileSize;
+		this.reachLimitX = 2.5 * tileSize;
+		this.reachLimitY = 2 * tileSize;
+		this.toggleClimb = false;
+		this.climbing = false;
+		this.climbSpeed = 5 * scale;
 	}
 	fall() {
 		var selectedPlatform = platformList.find(platform => {
-			return checkCollision(platform, this);
+			return checkCollision(platform, this) && this.position.y < platform.position.y;
 		});
 		this.currentJumpVelocity += this.gravity;
 		this.position.y += this.currentJumpVelocity;
@@ -270,9 +276,35 @@ class Player {
 			control.mine = false;
 		}
 	}
+	climb() {
+		var selectedLadder = ladderList.find(ladder => {return checkCollision(this, ladder);});
+		if (selectedLadder == undefined && this.climbing) {
+			this.onLand = false;
+			this.frameY = 1;
+			this.prevFrameY = this.frameY;
+			this.climbing = false;
+			control.climbUp = false;
+			control.climbDown = false;
+			return;
+		}
+		if (this.onLand && control.climb && !this.toggleClimb) {
+			this.climbing = !this.climbing;
+			this.toggleClimb = true;
+		}
+		if (this.climbing) {
+			this.frameY = 4;
+			this.position.y += this.climbSpeed * (control.climbDown - control.climbUp);
+			if (this.position.y > moving.height - this.height - tileSize / 2) this.position.y = moving.height - this.height - tileSize / 2;
+			control.left = false;
+			control.right = false;
+		}
+		else if (!this.climbing && this.toggleClimb) { 
+			this.onLand = false;
+			this.frameY = 1;
+			this.prevFrameY = this.frameY;
+		}
+	}
 	run() {
-		if (Math.abs(this.currentRunVelocity < this.maxRunSpeed)) this.currentRunVelocity += this.runAcceleration;
-		if (control.right - control.left == 0) this.currentRunVelocity = this.runSpeed;
 		if (this.onLand && control.right - control.left != 0) walkSound.play();
 		else walkSound.pause();
 		this.position.x += this.currentRunVelocity * (control.right - control.left);
@@ -286,19 +318,20 @@ class Player {
 		}
 	}
 	mine() {
-		if (control.mine && this.onLand && this.mineCount == this.mineDelay && control.mouseY != undefined) {
+		if (control.mine && this.onLand && this.mineCount == this.mineDelay && control.mouseY != undefined && 
+			control.mouseX >= this.position.x - this.reachLimitX && control.mouseX < this.position.x + this.reachLimitX && 
+			control.mouseY >= this.position.y - this.reachLimitY && control.mouseY < this.position.y + this.reachLimitY) {
 			this.prevFrameY = (control.mouseX < this.position.x) ? 1 : 0;
 			this.frameY = this.prevFrameY + 2;
 			this.frameX = 1;
-			control.mine = false;
 			this.mineCount = 0;
-			if (emptyTileList.includes([control.mouseX, control.mouseY]) == -1) return;
+			if (emptyTileList.includes([control.mouseX, control.mouseY])) return;
 			var selectedOre = oreList.find(ore => {
 				return (ore.position.x == control.mouseX && ore.position.y == control.mouseY);
 			});
 			var selectedOreIndex = oreList.indexOf(selectedOre);
+			if (selectedOre === undefined) return;
 			selectedOre.currentHardness -= pickaxe[this.pickaxe].dmg;
-			selectedOre.draw();
 			if (selectedOre.currentHardness > 0) {
 				textList.push(new Text({
 					text: `${selectedOre.currentHardness} / ${selectedOre.maxHardness}`, 
@@ -328,16 +361,34 @@ class Player {
 				}
 			}
 			miningSound.play();
+			selectedOre.draw();
 			if (this.frameX == 1) swingSound.play();
 		};
 		if (this.frameX == 3) this.frameY = this.prevFrameY;
 		if(this.mineCount < this.mineDelay) this.mineCount++;
+		control.mine = false;
 	}
 	draw() {
+		this.climb();
 		this.jump();
 		this.run();
-		this.mine();
+		if (!this.climbing) this.mine();
 		if (gameFrame % 100 == 0) this.frameX++;
+		if (control.mouseX >= this.position.x - this.reachLimitX && control.mouseX < this.position.x + this.reachLimitX && 
+			control.mouseY >= this.position.y - this.reachLimitY && control.mouseY < this.position.y + this.reachLimitY && this.onLand && !this.climbing) {
+			ctx.strokeStyle = "lime";
+		}
+		else {
+			ctx.strokeStyle = "red";
+			ctx.beginPath();
+			ctx.moveTo(control.mouseX, control.mouseY);
+			ctx.lineTo(control.mouseX + tileSize, control.mouseY + tileSize);
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(control.mouseX + tileSize, control.mouseY);
+			ctx.lineTo(control.mouseX, control.mouseY + tileSize);
+			ctx.stroke();
+		}
 		ctx.strokeRect(control.mouseX, control.mouseY, tileSize, tileSize);
 		ctx.drawImage(
 			playerImage, 
@@ -454,6 +505,22 @@ class Platform {
 	}
 }
 
+class Ladder {
+	constructor({position}) {
+		this.width = 5;
+		this.height = 64;
+		this.Imageposition = position;
+		this.position = {
+			x: this.Imageposition.x + tileSize / 2 + this.width / 2,
+			y: this.Imageposition.y
+		}
+		this.img = ladderImage;
+	}
+	draw() {
+		ctx1.drawImage(ladderImage, 0, 0, 64, 64, this.Imageposition.x, this.Imageposition.y, tileSize, tileSize);
+	}
+}
+
 function createEmptyCell() {
 	for (let row = 0; row < moving.height - guiGridSize; row += tileSize) {
 		for (let column = 0; column < moving.width; column += tileSize) {
@@ -470,7 +537,7 @@ function createOre() {
 		emptyTileList.splice(randomIndex, 1);
 		var abundance = Math.floor(Math.random() * 100);
 		var foundOre = false;
-		var currentBlock = oreType.find(ore => {
+		var currentBlock = Object.keys(oreType).find(ore => {
 			return (oreType[ore].minAbundance <= abundance && oreType[ore].maxAbundance >= abundance);
 		});
 		var newOre = new Ore({
@@ -485,11 +552,24 @@ function createOre() {
 }
 
 function createPlatform() {
-	for (let column = 0; column < moving.width; column += tileSize) {
-		platformList.push(new Platform({
+	for (let row = 0; row < 2; row++) {
+		for (let column = 0; column < moving.width; column += tileSize) {
+			platformList.push(new Platform({
+				position: {
+					x: column,
+					y: moving.height - ((row == 0) ? guiGridSize : tileSize / 2)
+				}
+			}));
+		}
+	}
+}
+
+function createLadder() {
+	for (let row = moving.height - guiGridSize; row < moving.height; row += tileSize) {
+		ladderList.push(new Ladder({
 			position: {
-				x: column,
-				y: moving.height - guiGridSize
+				x: 38 * tileSize,
+				y: row - 10
 			}
 		}));
 	}
@@ -500,15 +580,9 @@ function mineRegen() {
 	if (currentMineRegenTime == mineRegenTime && emptyTileList.length > 0) {
 		var tile = emptyTileList[0];
 		var abundance = Math.floor(Math.random() * 100);
-		/*var currentBlock = oreType.find(ore => {
+		var currentBlock = Object.keys(oreType).find(ore => {
 			return (oreType[ore].minAbundance <= abundance && oreType[ore].maxAbundance >= abundance);
-		});*/
-		for (let ore in oreType) {
-			if (oreType[ore].minAbundance <= abundance && oreType[ore].maxAbundance >= abundance) {
-				currentBlock = ore;
-				break;
-			}
-		}
+		});
 		oreList.push(new Ore({
 			position: {
 				x: tile[0],
@@ -523,9 +597,11 @@ function mineRegen() {
 } 
 
 function notAnimate() {
-	if (oreImage.complete && platformImage.complete) {
+	ladderList[0].draw();
+	if (oreImage.complete && platformImage.complete && ladderImage.complete) {
 		oreList.forEach(ore => ore.draw());
 		platformList.forEach(platform => platform.draw());	
+		ladderList.forEach(ladder => ladder.draw());	
 		backgroundLoaded = true;
 	}
 }
@@ -543,34 +619,69 @@ function animate() {
 	requestAnimationFrame(animate);	
 }
 
-createEmptyCell();
-createOre();
-createPlatform();
-animate();
+function onLoad() {
+	createEmptyCell();
+	createOre();
+	createPlatform();
+	createLadder();
+	animate();
+}
+
+onLoad();
 
 window.addEventListener("keydown", event => {
 	//bgm1.play();
 	switch(event.key.toLowerCase()) {
 		case 'w':
-			control.jump = true;
+			if (!player.climbing) control.jump = true;
+			else {
+				control.climbUp = true;
+				control.climbDown = false;
+			}
+			break;
+		case 's':
+			if (player.climbing) {
+				control.climbUp = false;
+				control.climbDown = true;
+			}
 			break;
 		case 'a':
 			control.left = true;
 			control.right = false;
+			if (player.climbing) {
+				player.climbing = false;
+				control.climbUp = false;
+				control.climbDown = false;
+				player.onLand = false;
+				control.jump = true;
+			}
 			player.frameY = 1;
 			player.prevFrameY = player.frameY;
 			break;
 		case 'd':
 			control.left = false;
 			control.right = true;
+			if (player.climbing) {
+				player.climbing = false;
+				control.climbUp = false;
+				control.climbDown = false;
+				player.onLand = false;
+				control.jump = true;
+			}
 			player.frameY = 0;
 			player.prevFrameY = player.frameY;
+			break;
+		case 'e':
+			control.climb = true;
 			break;
 	}
 });
 
 window.addEventListener("keyup", event => {
 	switch(event.key.toLowerCase()) {
+		case 'w': if (player.climbing) control.climbUp = false; break;
+		case 's': if (player.climbing) control.climbDown = false; break;
+		case 'e': control.climb = false; player.toggleClimb = false; break;
 		case 'a': control.left = false; break;
 		case 'd': control.right = false; break;
 	}
@@ -593,58 +704,6 @@ moving.addEventListener("mousedown", event => {
 
 window.addEventListener("resize", event => {
 	changeScale = true;
-	var prevScale = scale;
-	scale = (innerHeight - (innerHeight % 50)) / 1000;
-	currentScale = scale / prevScale;
-	tileSize = Math.floor(tileSize * currentScale);
-	guiGridSize = Math.round(8 * tileSize);
-	moving.height = Math.round(mapHeight * tileSize);
-	moving.width = Math.round(mapWidth * tileSize);
-	movingBounding = moving.getBoundingClientRect();
-	oreList.forEach(ore => {
-		ore.position.x = Math.round(ore.position.x * currentScale);
-		ore.position.y = Math.round(ore.position.y * currentScale);
-		ore.width = Math.round(ore.width * currentScale);
-		ore.height = Math.round(ore.height * currentScale);
-	});
-	emptyTileList.forEach(tile => {
-		tile[0] = Math.round(tile[0] * currentScale);
-		tile[1] = Math.round(tile[1] * currentScale); 
-	});
-	dropItemList.forEach(item => {
-		item.position.x = Math.round(item.position.x * currentScale);
-		item.position.y = Math.round(item.position.y * currentScale);
-		item.width = Math.round(item.width * currentScale);
-		item.height = Math.round(item.height * currentScale);
-		item.velocity *= currentScale;
-		item.gravity *= currentScale; 
-	});
-	platformList.forEach(platform => {
-		platform.position.x = Math.round(platform.position.x * currentScale);
-		platform.position.y = Math.round(platform.position.y * currentScale);
-		platform.width = Math.round(platform.width * currentScale);
-		platform.height = Math.round(platform.height * currentScale);
-	});
-	textList.forEach(text => {
-		text.position.x *= currentScale;
-		text.position.y *= currentScale;
-	});
-	player.position.x = Math.round(player.position.x * currentScale);
-	player.position.y = Math.round(player.position.y * currentScale);
-	player.width = Math.round(player.width *currentScale);
-	player.height = Math.round(player.height * currentScale);
-	player.spriteWidth = Math.round(player.spriteWidth * currentScale);
-	player.spriteHeight = Math.round(player.spriteHeight * currentScale);
-	player.gravity *= currentScale;
-	player.jumpSpeed *= currentScale;
-	player.fallSpeed *= currentScale;
-	player.currentJumpVelocity = this.fallSpeed;
-	player.runSpeed *= currentScale;
-	player.runAcceleration *= currentScale;
-	player.maxRunSpeed *= currentScale;
-	player.currentRunVelocity = this.runSpeed;
-	fontSize = 40 * currentScale;
-	ctx.font =  `${fontSize}px Georgia`;
-	ctx.textAlign = "center";
+	
 	changeScale = false;
 });
