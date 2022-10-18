@@ -15,10 +15,15 @@ canvas {
 	position: absolute;
 }
 
-#notMoving {
+#notMovingCanvas {
 	z-index: 1;
 }
 
-#moving {
+#movingCanvas {
 	z-index: 2;
+}
+
+
+#status {
+	z-index: 3;
 }

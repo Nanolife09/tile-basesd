@@ -1,7 +1,9 @@
-var moving = document.querySelector("#moving");
-var notMoving = document.querySelector("#notMoving");
-var ctx = moving.getContext("2d");
-var ctx1 = notMoving.getContext("2d");
+var movingCanvas = document.querySelector("#movingCanvas");
+var notMovingCanvas = document.querySelector("#notMovingCanvas");
+var statusCanvas = document.querySelector("#status");
+var movingCanvasCtx = movingCanvas.getContext("2d");
+var notMovingCanvasCtx = notMovingCanvas.getContext("2d");
+var statusCanvasCtx = statusCanvas.getContext("2d");
 var scale = (innerHeight - (innerHeight % 50)) / 1000;
 var currentScale = scale;
 var tileSize = Math.floor(50 * scale);
@@ -10,14 +12,16 @@ var mapWidth = 42;
 var guiGridSize = 8 * tileSize;
 var changeScale = false;
 var backgroundLoaded = false;
-moving.height = mapHeight * tileSize;
-moving.width = mapWidth * tileSize;
-notMoving.height = mapHeight * tileSize;
-notMoving.width = mapWidth * tileSize;
+movingCanvas.height = mapHeight * tileSize;
+movingCanvas.width = mapWidth * tileSize;
+notMovingCanvas.height = mapHeight * tileSize;
+notMovingCanvas.width = mapWidth * tileSize;
+statusCanvas.height = mapHeight * tileSize;
+statusCanvas.width = mapWidth * tileSize;
 var fontSize = 40 * scale;
-ctx.font = `${fontSize}px Georgia`;
-ctx.textAlign = "center";
-var movingBounding = moving.getBoundingClientRect();
+movingCanvasCtx.font = `${fontSize}px Georgia`;
+movingCanvasCtx.textAlign = "center";
+var movingCanvasBounding = movingCanvas.getBoundingClientRect();
 
 const control = {
 	left: false,
@@ -29,6 +33,7 @@ const control = {
 	climbDown: false,
 	mouseX: undefined,
 	mouseY: undefined,
+	openInventory: false
 };
 
 const oreType = {
@@ -219,8 +224,8 @@ function checkCollision(object1, object2) {
 class Player {
 	constructor() {
 		this.position = {
-			x: moving.width / 2,
-			y: moving.height / 2
+			x: movingCanvas.width / 2,
+			y: movingCanvas.height / 2
 		};
 		this.width = 45 * scale;
 		this.height = 64 * scale;
@@ -278,7 +283,7 @@ class Player {
 		}
 	}
 	climb() {
-		this.selectedLadder = ladderList.find(ladder => {return checkCollision(this, ladder);});
+		player.selectedLadder = ladderList.find(ladder => {return checkCollision(player, ladder);});
 		if (this.selectedLadder == undefined && this.climbing) {
 			this.onLand = false;
 			this.frameY = 1;
@@ -288,14 +293,17 @@ class Player {
 			control.climbDown = false;
 			return;
 		}
-		if (this.onLand && control.climb && !this.toggleClimb) {
+		if ((this.onLand || control.jump) && control.climb && !this.toggleClimb && this.selectedLadder != undefined) {
 			this.climbing = !this.climbing;
 			this.toggleClimb = true;
+			this.onLand = true;
+			control.jump = false;
 		}
 		if (this.climbing) {
 			this.frameY = 4;
+			this.position.x = this.selectedLadder.position.x;
 			this.position.y += this.climbSpeed * (control.climbDown - control.climbUp);
-			if (this.position.y > moving.height - this.height - tileSize / 2) this.position.y = moving.height - this.height - tileSize / 2;
+			if (this.position.y > movingCanvas.height - this.height - tileSize / 2) this.position.y = movingCanvas.height - this.height - tileSize / 2;
 			control.left = false;
 			control.right = false;
 		}
@@ -313,8 +321,8 @@ class Player {
 			this.position.x = 0;
 			walkSound.pause();
 		}
-		else if (this.position.x + this.width > moving.width) {
-			this.position.x = moving.width - this.width;
+		else if (this.position.x + this.width > movingCanvas.width) {
+			this.position.x = movingCanvas.width - this.width;
 			walkSound.pause();
 		}
 	}
@@ -326,12 +334,15 @@ class Player {
 			this.frameY = this.prevFrameY + 2;
 			this.frameX = 1;
 			this.mineCount = 0;
-			if (emptyTileList.includes([control.mouseX, control.mouseY])) return;
 			var selectedOre = oreList.find(ore => {
 				return (ore.position.x == control.mouseX && ore.position.y == control.mouseY);
 			});
 			var selectedOreIndex = oreList.indexOf(selectedOre);
-			if (selectedOre === undefined) return;
+			if (selectedOre === undefined) {
+				this.frameY = this.prevFrameY;
+				control.mine = false;
+				return;
+			}
 			selectedOre.currentHardness -= pickaxe[this.pickaxe].dmg;
 			if (selectedOre.currentHardness > 0) {
 				textList.push(new Text({
@@ -367,7 +378,6 @@ class Player {
 		};
 		if (this.frameX == 3) this.frameY = this.prevFrameY;
 		if(this.mineCount < this.mineDelay) this.mineCount++;
-		control.mine = false;
 	}
 	draw() {
 		this.climb();
@@ -375,23 +385,24 @@ class Player {
 		this.run();
 		if (!this.climbing) this.mine();
 		if (gameFrame % 100 == 0) this.frameX++;
+		statusCanvasCtx.lineWidth = 1;
 		if (control.mouseX >= this.position.x - this.reachLimitX && control.mouseX < this.position.x + this.reachLimitX && 
 			control.mouseY >= this.position.y - this.reachLimitY && control.mouseY < this.position.y + this.reachLimitY && this.onLand && !this.climbing) {
-			ctx.strokeStyle = "lime";
+			statusCanvasCtx.strokeStyle = "lime";
 		}
 		else {
-			ctx.strokeStyle = "red";
-			ctx.beginPath();
-			ctx.moveTo(control.mouseX, control.mouseY);
-			ctx.lineTo(control.mouseX + tileSize, control.mouseY + tileSize);
-			ctx.stroke();
-			ctx.beginPath();
-			ctx.moveTo(control.mouseX + tileSize, control.mouseY);
-			ctx.lineTo(control.mouseX, control.mouseY + tileSize);
-			ctx.stroke();
+			statusCanvasCtx.strokeStyle = "red";
+			statusCanvasCtx.beginPath();
+			statusCanvasCtx.moveTo(control.mouseX, control.mouseY);
+			statusCanvasCtx.lineTo(control.mouseX + tileSize, control.mouseY + tileSize);
+			statusCanvasCtx.stroke();
+			statusCanvasCtx.beginPath();
+			statusCanvasCtx.moveTo(control.mouseX + tileSize, control.mouseY);
+			statusCanvasCtx.lineTo(control.mouseX, control.mouseY + tileSize);
+			statusCanvasCtx.stroke();
 		}
-		ctx.strokeRect(control.mouseX, control.mouseY, tileSize, tileSize);
-		ctx.drawImage(
+		statusCanvasCtx.strokeRect(control.mouseX, control.mouseY, tileSize, tileSize);
+		movingCanvasCtx.drawImage(
 			playerImage, 
 			(this.frameX % 4) * this.imgSize, 
 			this.frameY * this.imgSize, 
@@ -400,8 +411,8 @@ class Player {
 			this.spriteWidth, this.spriteHeight
 		);
 		if (this.selectedLadder != undefined && !this.climbing) {
-			ctx.fillStyle = "white";
-			ctx.fillText("E", this.position.x + this.width / 2, this.position.y - 10);
+			movingCanvasCtx.fillStyle = "white";
+			movingCanvasCtx.fillText("E", this.position.x + this.width / 2, this.position.y - 10);
 		}
 	}
 }
@@ -422,8 +433,8 @@ class Text {
 	}
 	draw() {
 		this.update();
-		ctx.fillStyle = this.color;
-		ctx.fillText(this.text, this.position.x, this.position.y);
+		movingCanvasCtx.fillStyle = this.color;
+		movingCanvasCtx.fillText(this.text, this.position.x, this.position.y);
 	}
 }
 
@@ -452,7 +463,7 @@ class OreChunk {
 			this.position.y += this.velocity.y;
 			this.position.x += this.velocity.x;
 			if (this.position.x < 0) this.position.x = 0;
-			else if (this.position.x + this.width > moving.width) this.position.x = moving.width - this.width;
+			else if (this.position.x + this.width > movingCanvas.width) this.position.x = movingCanvas.width - this.width;
 		}
 	}
 	collected() {
@@ -474,9 +485,9 @@ class OreChunk {
 		this.onLand = false;
 		this.fall();
 		this.collected();
-		ctx.fillStyle = "black";
-		ctx.fillRect(this.position.x, this.position.y, this.width, this.height);
-		ctx.drawImage(droppedOreImage, oreType[this.block].tier * 40, 0, 40, 40, this.position.x, this.position.y, this.width, this.width);
+		movingCanvasCtx.fillStyle = "black";
+		movingCanvasCtx.fillRect(this.position.x, this.position.y, this.width, this.height);
+		movingCanvasCtx.drawImage(droppedOreImage, oreType[this.block].tier * 40, 0, 40, 40, this.position.x, this.position.y, this.width, this.width);
 	}
 }
 
@@ -491,11 +502,11 @@ class Ore {
 	}
 	draw() {
 		if (this.currentHardness > 0) {
-			ctx1.drawImage(oreImage, oreType[this.block].tier * 64, 0, 64, 64, this.position.x, this.position.y, this.width, this.height);
-			ctx1.fillStyle = "rgba(255, 0, 0, 0.2)";
-			ctx1.fillRect(this.position.x, this.position.y + tileSize * (this.currentHardness / this.maxHardness), tileSize, tileSize * (1 - this.currentHardness / this.maxHardness));
+			notMovingCanvasCtx.drawImage(oreImage, oreType[this.block].tier * 64, 0, 64, 64, this.position.x, this.position.y, this.width, this.height);
+			notMovingCanvasCtx.fillStyle = "rgba(255, 0, 0, 0.2)";
+			notMovingCanvasCtx.fillRect(this.position.x, this.position.y + tileSize * (this.currentHardness / this.maxHardness), tileSize, tileSize * (1 - this.currentHardness / this.maxHardness));
 		}
-		else ctx1.clearRect(this.position.x, this.position.y, tileSize, tileSize);
+		else notMovingCanvasCtx.clearRect(this.position.x, this.position.y, tileSize, tileSize);
 	}
 }
 
@@ -506,52 +517,65 @@ class Platform {
 		this.height = tileSize / 2;
 	}
 	draw() {
-		ctx1.drawImage(platformImage, 0, 0, 64, 32, this.position.x, this.position.y, this.width, this.height);
+		notMovingCanvasCtx.drawImage(platformImage, 0, 0, 64, 32, this.position.x, this.position.y, this.width, this.height);
 	}
 }
 
 class Ladder {
 	constructor({position}) {
-		this.width = 5;
-		this.height = 64;
-		this.Imageposition = position;
-		this.position = {
-			x: this.Imageposition.x + tileSize / 2 + this.width / 2,
-			y: this.Imageposition.y
-		}
+		this.position = position;
+		this.width = tileSize;
+		this.height = tileSize;
 		this.img = ladderImage;
 	}
 	draw() {
-		ctx1.drawImage(ladderImage, 0, 0, 64, 64, this.Imageposition.x, this.Imageposition.y, tileSize, tileSize);
+		notMovingCanvasCtx.drawImage(ladderImage, 0, 0, 64, 64, this.position.x, this.position.y, tileSize, tileSize);
 	}
 }
 
 class GUI {
-
-	static show = true;
-
-	static display() {
-		GUI.show = true;
+	static isOpen = false;
+	static toggleGUI = false;
+	static width = 35 * tileSize;
+	static height = 18 * tileSize;
+	static position = {
+		x: (movingCanvas.width - GUI.width) / 2,
+		y: (movingCanvas.height - GUI.height) / 2,
 	}
-
-	static hide() {
-		GUI.show = false;
+	static update() {
+		if (control.openInventory && !GUI.toggleGUI) {
+			GUI.isOpen = !GUI.isOpen;
+			GUI.toggleGUI = true;
+		}
+		if (GUI.isOpen) {
+			control.left = false;
+			control.right = false;
+			control.jump = false;
+		}
+	}	
+	static show() {
+		statusCanvasCtx.strokeStyle = "black";
+		statusCanvasCtx.lineWidth = 5;
+		statusCanvasCtx.fillStyle = "rgba(255, 255, 255, 0.7)";
+		statusCanvasCtx.fillRect(GUI.position.x, GUI.position.y, GUI.width, GUI.height);
+		statusCanvasCtx.strokeRect(GUI.position.x, GUI.position.y, GUI.width, GUI.height);
 	}
 	static draw() {
-
+		GUI.update();
+		if (GUI.isOpen) GUI.show();
 	}
 }
 
 function createEmptyCell() {
-	for (let row = 0; row < moving.height - guiGridSize; row += tileSize) {
-		for (let column = 0; column < moving.width; column += tileSize) {
+	for (let row = 0; row < movingCanvas.height - guiGridSize; row += tileSize) {
+		for (let column = 0; column < movingCanvas.width; column += tileSize) {
 			emptyTileList.push([column, row]);
 		}
 	}
 }
 
 function createOre() {
-	for (let i = 0; i < moving.width * (moving.height - guiGridSize)/ Math.pow(tileSize, 2); i++) {
+	for (let i = 0; i < movingCanvas.width * (movingCanvas.height - guiGridSize)/ Math.pow(tileSize, 2); i++) {
 		var randomIndex = Math.floor(Math.random() * (emptyTileList.length - 1));
 		var newX = emptyTileList[randomIndex][0];
 		var newY = emptyTileList[randomIndex][1];
@@ -574,11 +598,11 @@ function createOre() {
 
 function createPlatform() {
 	for (let row = 0; row < 2; row++) {
-		for (let column = 0; column < moving.width; column += tileSize) {
+		for (let column = 0; column < movingCanvas.width; column += tileSize) {
 			platformList.push(new Platform({
 				position: {
 					x: column,
-					y: moving.height - ((row == 0) ? guiGridSize : tileSize / 2)
+					y: movingCanvas.height - ((row == 0) ? guiGridSize : tileSize / 2)
 				}
 			}));
 		}
@@ -586,7 +610,7 @@ function createPlatform() {
 }
 
 function createLadder() {
-	for (let row = moving.height - guiGridSize; row < moving.height; row += tileSize) {
+	for (let row = movingCanvas.height - guiGridSize; row < movingCanvas.height; row += tileSize) {
 		ladderList.push(new Ladder({
 			position: {
 				x: 38 * tileSize,
@@ -628,17 +652,22 @@ function notAnimate() {
 }
 
 function animate() {
+	statusCanvasCtx.clearRect(0, 0, movingCanvas.width, movingCanvas.height);
+	GUI.draw();
 	if (!changeScale) {
-		ctx.clearRect(0, 0, moving.width, moving.height);
-		mineRegen();
-		dropItemList.forEach(chunk => chunk.draw());
-		textList.forEach(text => text.draw());
-		player.draw();
-		GUI.draw();
-		gameFrame++;
-		if (!backgroundLoaded) notAnimate();
+		if (!GUI.isOpen) {
+			movingCanvasCtx.clearRect(0, 0, movingCanvas.width, movingCanvas.height);
+			mineRegen();
+			dropItemList.forEach(chunk => chunk.draw());
+			textList.forEach(text => text.draw());
+			player.draw();
+			gameFrame++;
+			if (!backgroundLoaded) notAnimate();
+		}
+		else {
+			walkSound.pause();
+		}
 	}
-	// requestAnimationFrame(animate);	
 }
 
 function onLoad() {
@@ -655,6 +684,7 @@ window.addEventListener("keydown", event => {
 	//bgm1.play();
 	switch(event.key.toLowerCase()) {
 		case 'w':
+			if (GUI.isOpen) return;
 			if (!player.climbing) control.jump = true;
 			else {
 				control.climbUp = true;
@@ -662,12 +692,14 @@ window.addEventListener("keydown", event => {
 			}
 			break;
 		case 's':
+			if (GUI.isOpen) return;
 			if (player.climbing) {
 				control.climbUp = false;
 				control.climbDown = true;
 			}
 			break;
 		case 'a':
+			if (GUI.isOpen) return;
 			control.left = true;
 			control.right = false;
 			if (player.climbing) {
@@ -681,6 +713,7 @@ window.addEventListener("keydown", event => {
 			player.prevFrameY = player.frameY;
 			break;
 		case 'd':
+			if (GUI.isOpen) return;
 			control.left = false;
 			control.right = true;
 			if (player.climbing) {
@@ -694,7 +727,8 @@ window.addEventListener("keydown", event => {
 			player.prevFrameY = player.frameY;
 			break;
 		case 'e':
-			control.climb = true;
+			if (player.selectedLadder != undefined) control.climb = true;
+			else control.openInventory = true;
 			break;
 		case 'Tab':
 
@@ -705,29 +739,44 @@ window.addEventListener("keyup", event => {
 	switch(event.key.toLowerCase()) {
 		case 'w': if (player.climbing) control.climbUp = false; break;
 		case 's': if (player.climbing) control.climbDown = false; break;
-		case 'e': control.climb = false; player.toggleClimb = false; break;
 		case 'a': control.left = false; break;
 		case 'd': control.right = false; break;
+		case 'e': 
+		if (player.selectedLadder != undefined) {
+			control.climb = false; 
+			player.toggleClimb = false;
+		}
+		else {
+			control.openInventory = false;
+			GUI.toggleGUI = false;
+		}
+		break;
 	}
 });
 
-moving.addEventListener("mousemove", event => {
-	control.mouseX = (event.x - movingBounding.left) - ((event.x - movingBounding.left) % tileSize);
-	control.mouseY = (event.y - movingBounding.top) - ((event.y - movingBounding.top) % tileSize);
-	if (control.mouseY >= moving.height - guiGridSize) {
+statusCanvas.addEventListener("mousemove", event => {
+	if (GUI.isOpen) return;
+	if (control.mouseX != (event.x - movingCanvasBounding.left) - ((event.x - movingCanvasBounding.left) % tileSize) ||
+		control.mouseY != (event.y - movingCanvasBounding.top) - ((event.y - movingCanvasBounding.top) % tileSize)) {
+		control.mouseX = (event.x - movingCanvasBounding.left) - ((event.x - movingCanvasBounding.left) % tileSize);
+		control.mouseY = (event.y - movingCanvasBounding.top) - ((event.y - movingCanvasBounding.top) % tileSize);
+		control.mine = false;
+	}
+	if (control.mouseY >= movingCanvas.height - guiGridSize) {
 		control.mouseX = undefined;
 		control.mouseY = undefined;
 		control.mine = false;
 	}
 });
 
-moving.addEventListener("mousedown", event => {
+statusCanvas.addEventListener("mousedown", event => {
 	//bgm1.play();
+	if (GUI.isOpen) return;
 	if (player.onLand && player.mineCount == player.mineDelay) control.mine = true;
 });
 
 window.addEventListener("resize", event => {
 	changeScale = true;
-	
+	movingCanvasBounding = movingCanvas.getBoundingClientRect();
 	changeScale = false;
 });
