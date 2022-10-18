@@ -526,6 +526,22 @@ class Ladder {
 	}
 }
 
+class GUI {
+
+	static show = true;
+
+	static display() {
+		GUI.show = true;
+	}
+
+	static hide() {
+		GUI.show = false;
+	}
+	static draw() {
+
+	}
+}
+
 function createEmptyCell() {
 	for (let row = 0; row < moving.height - guiGridSize; row += tileSize) {
 		for (let column = 0; column < moving.width; column += tileSize) {
@@ -618,10 +634,11 @@ function animate() {
 		dropItemList.forEach(chunk => chunk.draw());
 		textList.forEach(text => text.draw());
 		player.draw();
+		GUI.draw();
 		gameFrame++;
 		if (!backgroundLoaded) notAnimate();
 	}
-	requestAnimationFrame(animate);	
+	// requestAnimationFrame(animate);	
 }
 
 function onLoad() {
@@ -629,7 +646,7 @@ function onLoad() {
 	createOre();
 	createPlatform();
 	createLadder();
-	animate();
+	window.setInterval(animate, 8);
 }
 
 onLoad();
@@ -679,6 +696,8 @@ window.addEventListener("keydown", event => {
 		case 'e':
 			control.climb = true;
 			break;
+		case 'Tab':
+
 	}
 });
 
